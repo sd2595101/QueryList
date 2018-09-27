@@ -160,7 +160,25 @@ class Query
                             $data[$i][$key] = $this->stripTags(pq($iobj)->html(),$tags);
                             break;
                         default:
-                            $data[$i][$key] = pq($iobj)->attr($reg_value[1]);
+                            if (count(pq($iobj)->elements) > 1) {
+                                if (is_array($reg_value[1])) {
+                                    foreach (pq($iobj) as $o) {
+                                        $one = [];
+                                        foreach ($reg_value[1] as $keyname => $attr) {
+                                            if ($attr == 'text') {
+                                                $one[$keyname] = $this->allowTags(pq($o)->html(),$tags);
+                                            } else {
+                                                $one[$keyname] = pq($o)->attr($attr);
+                                            }
+                                        }
+                                        $data[$i][$key][] = $one;
+                                    }
+                                } else {
+                                    $data[$i][$key] = pq($iobj)->attrs($reg_value[1]);
+                                }
+                            } else {
+                                $data[$i][$key] = pq($iobj)->attr($reg_value[1]);
+                            }
                             break;
                     }
 
