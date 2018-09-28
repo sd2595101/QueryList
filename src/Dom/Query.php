@@ -152,8 +152,8 @@ class Query
                             $data[$i][$key] = $this->allowTags(pq($iobj)->html(),$tags);
                             break;
                         case 'texts':
-                            $data[$i][$key] = array_map(function($e){
-                                return $e->textContent;
+                            $data[$i][$key] = array_map(function($e) use ($tags){
+                                return $this->allowTags(pq($e)->html(),$tags);
                             }, pq($iobj)->elements);
                             break;
                         case 'html':
@@ -193,10 +193,22 @@ class Query
                 $tags = $reg_value[2] ?? '';
                 $lobj = $this->document->find($reg_value[0]);
                 $i = 0;
+                $break = false;
                 foreach ($lobj as $item) {
                     switch ($reg_value[1]) {
                         case 'text':
                             $data[$i][$key] = $this->allowTags(pq($item,$this->document)->html(),$tags);
+                            break;
+                        case 'texts':
+                            $data[$i][$key] = array_map(function($e) use ($tags){
+                                    return $this->allowTags(pq($e)->html(),$tags);
+                                }, pq($lobj)->elements);
+                            
+                            $break = true;
+                            break;
+                        case 'exists':
+                            $data[$i][$key] = count(pq($lobj)->elements) > 0;
+                            $break = true;
                             break;
                         case 'html':
                             $data[$i][$key] = $this->stripTags(pq($item,$this->document)->html(),$tags);
@@ -205,11 +217,13 @@ class Query
                             $data[$i][$key] = pq($item,$this->document)->attr($reg_value[1]);
                             break;
                     }
-
+                    
                     if(isset($reg_value[3])){
                         $data[$i][$key] = call_user_func($reg_value[3],$data[$i][$key],$key);
                     }
-
+                    if ($break) {
+                        break;
+                    }
                     $i++;
                 }
             }
