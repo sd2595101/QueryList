@@ -4,13 +4,13 @@
  * User: Jaeger <JaegerCode@gmail.com>
  * Date: 2017/9/21
  */
-
 namespace QL\Dom;
 
 use Illuminate\Support\Collection;
 use phpQuery;
 use QL\QueryList;
 use Closure;
+use phpQueryObject;
 
 class Query
 {
@@ -19,11 +19,11 @@ class Query
     protected $rules;
     protected $range = null;
     protected $ql;
+
     /**
      * @var Collection
      */
     protected $data;
-
 
     public function __construct(QueryList $ql)
     {
@@ -46,7 +46,7 @@ class Query
     public function setHtml($html, $charset = null)
     {
         $this->html = value($html);
-        $this->document = phpQuery::newDocumentHTML($this->html,$charset);
+        $this->document = phpQuery::newDocumentHTML($this->html, $charset);
         return $this->ql;
     }
 
@@ -58,7 +58,7 @@ class Query
      */
     public function getData(Closure $callback = null)
     {
-        return  is_null($callback) ? $this->data : $this->data->map($callback);
+        return is_null($callback) ? $this->data : $this->data->map($callback);
     }
 
     /**
@@ -68,7 +68,6 @@ class Query
     {
         $this->data = $data;
     }
-
 
     /**
      * Searches for all elements that match the specified expression.
@@ -99,7 +98,6 @@ class Query
         return $this->ql;
     }
 
-
     /**
      * Set the slice area for crawl list
      *
@@ -119,7 +117,7 @@ class Query
      */
     public function removeHead()
     {
-        $html = preg_replace('/<head.+?>.+<\/head>/is','<head></head>',$this->html);
+        $html = preg_replace('/<head.+?>.+<\/head>/is', '<head></head>', $this->html);
         $this->setHtml($html);
         return $this->ql;
     }
@@ -139,114 +137,116 @@ class Query
 
     protected function getList()
     {
-        $data = [];
         if (!empty($this->range)) {
-            $robj = $this->document->find($this->range);
-            $i = 0;
-            foreach ($robj as $item) {
-                foreach ($this->rules as $key => $reg_value){
-                    $tags = $reg_value[2] ?? '';
-                    $iobj = pq($item,$this->document)->find($reg_value[0]);
-                    switch ($reg_value[1]) {
-                        case 'text':
-                            $data[$i][$key] = $this->allowTags(pq($iobj)->html(),$tags);
-                            break;
-                        case 'texts':
-                            $data[$i][$key] = array_map(function($e) use ($tags){
-                                return $this->allowTags(pq($e)->html(),$tags);
-                            }, pq($iobj)->elements);
-                            break;
-                        case 'html':
-                            $data[$i][$key] = $this->stripTags(pq($iobj)->html(),$tags);
-                            break;
-                        default:
-                            if (count(pq($iobj)->elements) > 1) {
-                                if (is_array($reg_value[1])) {
-                                    foreach (pq($iobj) as $o) {
-                                        $one = [];
-                                        foreach ($reg_value[1] as $keyname => $attr) {
-                                            if ($attr == 'text') {
-                                                $one[$keyname] = $this->allowTags(pq($o)->html(),$tags);
-                                            } else {
-                                                $one[$keyname] = pq($o)->attr($attr);
-                                            }
-                                        }
-                                        $data[$i][$key][] = $one;
-                                    }
-                                } else {
-                                    $data[$i][$key] = pq($iobj)->attrs($reg_value[1]);
-                                }
-                            } else {
-                                $data[$i][$key] = pq($iobj)->attr($reg_value[1]);
-                            }
-                            break;
-                    }
-
-                    if(isset($reg_value[3])){
-                        $data[$i][$key] = call_user_func($reg_value[3],$data[$i][$key],$key);
-                    }
-                }
-                $i++;
-            }
+            return $this->getListUseRange();
         } else {
-            foreach ($this->rules as $key => $reg_value){
-                $tags = $reg_value[2] ?? '';
-                $lobj = $this->document->find($reg_value[0]);
-                $i = 0;
-                $break = false;
-                foreach ($lobj as $item) {
-                    switch ($reg_value[1]) {
-                        case 'text':
-                            $data[$i][$key] = $this->allowTags(pq($item,$this->document)->html(),$tags);
-                            break;
-                        case 'texts':
-                            $data[$i][$key] = array_map(function($e) use ($tags){
-                                    return $this->allowTags(pq($e)->html(),$tags);
-                                }, pq($lobj)->elements);
-                            
-                            $break = true;
-                            break;
-                        case 'exists':
-                            $data[$i][$key] = count(pq($lobj)->elements) > 0;
-                            $break = true;
-                            break;
-                        case 'html':
-                            $data[$i][$key] = $this->stripTags(pq($item,$this->document)->html(),$tags);
-                            break;
-                        default:
-                            $data[$i][$key] = pq($item,$this->document)->attr($reg_value[1]);
-                            break;
-                    }
-                    
-                    if(isset($reg_value[3])){
-                        $data[$i][$key] = call_user_func($reg_value[3],$data[$i][$key],$key);
-                    }
-                    if ($break) {
-                        break;
-                    }
-                    $i++;
+            return $this->getListNoRange();
+        }
+    }
+
+    protected function getListUseRange()
+    {
+        $data = [];
+        $robj = $this->document->find($this->range);
+        $i = 0;
+        foreach ($robj as $item) {
+            foreach ($this->rules as $key => $rule) {
+                $tags = $rule[ 2 ] ?? '';
+                $iobj = pq($item, $this->document)->find($rule[ 0 ]);
+                $data[ $i ][ $key ] = $this->findElems($rule[ 1 ], $tags, $iobj);
+                if (isset($rule[ 3 ])) {
+                    $data[ $i ][ $key ] = call_user_func($rule[ 3 ], $data[ $i ][ $key ], $key);
                 }
             }
+            $i++;
         }
-//        phpQuery::$documents = array();
         return collect($data);
     }
 
+    /**
+     * find data by rules, not specific ranges.
+     */
+    protected function getListNoRange()
+    {
+        $data = [];
+        foreach ($this->rules as $ruleName => $rule) {
+            $finded = $this->document->find($rule[ 0 ]);
+            $data[ $ruleName ] = $this->buildOneRule($rule, $finded, $ruleName);
+        }
+        return collect(array($data));
+    }
+
+    protected function buildOneRule($rule, $finded, $ruleName)
+    {
+        $attr = $rule[ 1 ] ?? '*';
+        $tags = $rule[ 2 ] ?? '';
+        $callback = $rule[ 3 ] ?? false;
+        $result = $this->findElementAttrOne($attr, $tags, pq($finded));
+        if (!is_callable($callback)) {
+            return $result;
+        }
+        return call_user_func($rule[ 3 ], $result, $ruleName);
+    }
+
+    protected function findElementAttrOne($attr, $tags, phpQueryObject $pq)
+    {
+        //dump(get_class($pq));
+        switch ($attr) {
+            case 'text':
+                return $this->allowTags($pq->html(), $tags);
+            case 'texts':
+                return \array_map(function($e) use ($tags) {
+                    return $this->allowTags(pq($e)->html(), $tags);
+                }, $pq->elements);
+            case 'html':
+                return $this->stripTags($pq->html(), $tags);
+            case 'exists':
+                return \count($pq->elements) > 0;
+            default:
+                return $pq->attr($attr);
+        }
+    }
+
+    protected function findElems($attrs, $tags, phpQueryObject $pq)
+    {
+        if (is_array($attrs) || '/r' == substr($attrs, -2) || count($pq->elements) > 1) {
+            return array_map(function($elem) use ($attrs, $tags) {
+                return $this->findSingleElemAttrs($attrs, $tags, pq($elem));
+            }, $pq->elements);
+        } else {
+            return $this->findSingleElemAttrs($attrs, $tags, $pq);
+        }
+    }
+
+    protected function findSingleElemAttrs($attrs, $tags, phpQueryObject $pq)
+    {
+        $data = [];
+        if (is_array($attrs)) {
+            foreach ($attrs as $key => $attr) {
+                $data[ $key ] = $this->findElementAttrOne($attr, $tags, $pq);
+            }
+            unset($key, $attr);
+        } else {
+            $data = $this->findElementAttrOne($attrs, $tags, $pq);
+        }
+        return $data;
+    }
+    
     /**
      * 去除特定的html标签
      * @param  string $html
      * @param  string $tags_str 多个标签名之间用空格隔开
      * @return string
      */
-    protected function stripTags($html,$tags_str)
+    protected function stripTags($html, $tags_str)
     {
         $tagsArr = $this->tag($tags_str);
-        $html = $this->removeTags($html,$tagsArr[1]);
+        $html = $this->removeTags($html, $tagsArr[ 1 ]);
         $p = array();
-        foreach ($tagsArr[0] as $tag) {
-            $p[]="/(<(?:\/".$tag."|".$tag.")[^>]*>)/i";
+        foreach ($tagsArr[ 0 ] as $tag) {
+            $p[] = "/(<(?:\/" . $tag . "|" . $tag . ")[^>]*>)/i";
         }
-        $html = preg_replace($p,"",trim($html));
+        $html = preg_replace($p, "", trim($html));
         return $html;
     }
 
@@ -256,28 +256,26 @@ class Query
      * @param  string $tags_str 多个标签名之间用空格隔开
      * @return string
      */
-    protected function allowTags($html,$tags_str)
+    protected function allowTags($html, $tags_str)
     {
         $tagsArr = $this->tag($tags_str);
-        $html = $this->removeTags($html,$tagsArr[1]);
+        $html = $this->removeTags($html, $tagsArr[ 1 ]);
         $allow = '';
-        foreach ($tagsArr[0] as $tag) {
+        foreach ($tagsArr[ 0 ] as $tag) {
             $allow .= "<$tag> ";
         }
-        return strip_tags(trim($html),$allow);
+        return strip_tags(trim($html), $allow);
     }
 
     protected function tag($tags_str)
     {
-        $tagArr = preg_split("/\s+/",$tags_str,-1,PREG_SPLIT_NO_EMPTY);
-        $tags = array(array(),array());
-        foreach($tagArr as $tag)
-        {
-            if(preg_match('/-(.+)/', $tag,$arr))
-            {
-                array_push($tags[1], $arr[1]);
-            }else{
-                array_push($tags[0], $tag);
+        $tagArr = preg_split("/\s+/", $tags_str, -1, PREG_SPLIT_NO_EMPTY);
+        $tags = array(array(), array());
+        foreach ($tagArr as $tag) {
+            if (preg_match('/-(.+)/', $tag, $arr)) {
+                array_push($tags[ 1 ], $arr[ 1 ]);
+            } else {
+                array_push($tags[ 0 ], $tag);
             }
         }
         return $tags;
@@ -289,15 +287,13 @@ class Query
      * @param  array  $tags 标签数组
      * @return string
      */
-    protected function removeTags($html,$tags)
+    protected function removeTags($html, $tags)
     {
         $tag_str = '';
-        if(count($tags))
-        {
+        if (count($tags)) {
             foreach ($tags as $tag) {
-                $tag_str .= $tag_str?','.$tag:$tag;
+                $tag_str .= $tag_str ? ',' . $tag : $tag;
             }
-//            phpQuery::$defaultCharset = $this->inputEncoding?$this->inputEncoding:$this->htmlEncoding;
             $doc = phpQuery::newDocumentHTML($html);
             pq($doc)->find($tag_str)->remove();
             $html = pq($doc)->htmlOuter();
